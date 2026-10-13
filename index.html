@@ -48,6 +48,12 @@
 
   .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 6px; margin-bottom: 12px; }
   .card h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .toggle { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: #fff;
+            color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 500; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+  .toggle[hidden] { display: none; }
+  .toggle i { width: 14px; height: 0; border-top: 2px dashed #d0312d; }
+  .toggle[aria-pressed="true"] { border-color: #d0312d; color: #a82420; background: #fdf0ef; }
   .card .hint { font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
   .chart-box { position: relative; height: 230px; }
 
@@ -94,7 +100,10 @@
       <div class="chart-box"><canvas id="c-caudal" role="img" aria-label="Gráfico de caudal"></canvas></div>
     </div>
     <div class="card" id="card-cota">
-      <h2 id="t-cota">Cota del embalse</h2>
+      <div class="card-head">
+        <h2 id="t-cota">Cota del embalse</h2>
+        <button type="button" class="toggle" id="btn-critica" aria-pressed="false" hidden><i aria-hidden="true"></i>Cota crítica</button>
+      </div>
       <p class="hint" id="h-cota"></p>
       <div class="chart-box"><canvas id="c-cota" role="img" aria-label="Gráfico de cota"></canvas></div>
     </div>
@@ -131,7 +140,8 @@
   var params = new URLSearchParams(location.search);
   var estado = {
     periodo: params.get("periodo") === "mensual" ? "mensual" : "diario",
-    embalse: EMBALSES.some(function (e) { return e.id === params.get("embalse"); }) ? params.get("embalse") : "mazar"
+    embalse: EMBALSES.some(function (e) { return e.id === params.get("embalse"); }) ? params.get("embalse") : "mazar",
+    verCritica: { diario: false, mensual: true }
   };
   var datos = { diario: null, mensual: null };
   var charts = {};
@@ -305,9 +315,13 @@
     if (emb.cota) {
       cardCota.style.display = "";
       document.getElementById("t-cota").textContent = (mensual ? "Cota al cierre de cada día, " : "Cota por hora, ") + emb.nombre;
+      var ver = !!emb.critica && estado.verCritica[estado.periodo];
+      var btn = document.getElementById("btn-critica");
+      btn.hidden = !emb.critica;
+      btn.setAttribute("aria-pressed", String(ver));
       document.getElementById("h-cota").textContent = "Nivel del agua, en metros sobre el nivel del mar." +
-        (emb.critica ? " La línea roja marca la cota crítica (" + num(emb.critica, 0) + " m s. n. m.)." : "");
-      var extra = emb.critica ? [{
+        (ver ? " La línea roja marca la cota crítica (" + num(emb.critica, 0) + " m s. n. m.)." : "");
+      var extra = ver ? [{
         referencia: true, data: labels.map(function () { return emb.critica; }),
         borderColor: "#d0312d", borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, pointHitRadius: 0, fill: false
       }] : [];
@@ -339,6 +353,9 @@
   document.getElementById("chips").addEventListener("click", function (ev) {
     var b = ev.target.closest("button"); if (!b) return;
     estado.embalse = b.dataset.id; render();
+  });
+  document.getElementById("btn-critica").addEventListener("click", function () {
+    estado.verCritica[estado.periodo] = !estado.verCritica[estado.periodo]; render();
   });
   document.querySelectorAll("[data-periodo]").forEach(function (b) {
     b.addEventListener("click", function () { estado.periodo = b.dataset.periodo; render(); });
