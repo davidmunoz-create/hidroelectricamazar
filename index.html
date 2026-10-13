@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hidrología CELEC Sur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f6f7fb;
+    --ink: #14152b;
+    --ink-2: #4a4c66;
+    --muted: #7b7d95;
+    --line: #e3e5ee;
+    --brand: #2a27b8;
+    --brand-soft: #e9e8fb;
+    --caudal: #2a27b8;
+    --cota: #0f7a6e;
+    --meter-bg: #e3e5ee;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.4; padding: 16px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; line-height: 1.25; margin: 0 0 4px; font-weight: 700; }
+  .sub { color: var(--ink-2); font-size: 13.5px; margin: 0 0 14px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+  .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-weight: 600; font-size: 14px; padding: 6px 16px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { border: 1px solid var(--line); background: #fff; color: var(--ink-2); font: inherit; font-size: 13.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+  .chips button[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpi { background: var(--panel); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .kpi .lbl { font-size: 12.5px; color: var(--ink-2); }
+  .kpi .val { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi .val small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 3px; }
+  .kpi .note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .meter { height: 8px; background: var(--meter-bg); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--cota); border-radius: 4px; }
+
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 6px; margin-bottom: 12px; }
+  .card h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  .card .hint { font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
+  .chart-box { position: relative; height: 230px; }
+
+  .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .foot a { color: var(--brand); }
+  details { margin-top: 10px; font-size: 13px; }
+  summary { cursor: pointer; color: var(--brand); font-weight: 500; }
+  .tbl-wrap { overflow-x: auto; max-height: 280px; overflow-y: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { position: sticky; top: 0; background: var(--panel); font-weight: 600; }
+  .msg { padding: 40px 10px; text-align: center; color: var(--ink-2); }
+
+  @media (max-width: 560px) {
+    body { padding: 12px; }
+    h1 { font-size: 18px; }
+    .kpis { grid-template-columns: 1fr 1fr; }
+    .kpi:last-child { grid-column: 1 / -1; }
+    .kpi .val { font-size: 19px; }
+    .chart-box { height: 200px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Caudales y niveles de los embalses de CELEC Sur</h1>
+  <p class="sub" id="sub">Cargando datos…</p>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Periodo">
+      <button type="button" data-periodo="diario" aria-pressed="true">Diario</button>
+      <button type="button" data-periodo="mensual" aria-pressed="false">Mensual</button>
+    </div>
+    <div class="chips" role="group" aria-label="Embalse" id="chips"></div>
+  </div>
+
+  <p class="msg" id="vacio" hidden>No hay datos disponibles para este periodo.</p>
+  <div id="app">
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <h2 id="t-caudal">Caudal</h2>
+      <p class="hint" id="h-caudal"></p>
+      <div class="chart-box"><canvas id="c-caudal" role="img" aria-label="Gráfico de caudal"></canvas></div>
+    </div>
+    <div class="card" id="card-cota">
+      <h2 id="t-cota">Cota del embalse</h2>
+      <p class="hint" id="h-cota"></p>
+      <div class="chart-box"><canvas id="c-cota" role="img" aria-label="Gráfico de cota"></canvas></div>
+    </div>
+    <details>
+      <summary>Ver los datos en una tabla</summary>
+      <div class="tbl-wrap"><table id="tabla"></table></div>
+    </details>
+  </div>
+
+  <div class="foot">
+    <span>Fuente: CELEC EP, Unidad de Negocio CELEC Sur. Elaboración: Ecuavisa.</span>
+    <a id="descarga" href="data/diario.csv" download>Descargar datos (CSV)</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Columnas del CSV que exporta CELEC Sur y rangos de operación que publica la propia página.
+  var EMBALSES = [
+    { id: "paute", nombre: "Cuenca del Paute", caudal: "CaudalCuencaPaute",
+      descCaudal: "Caudal de la cuenca del río Paute" },
+    { id: "mazar", nombre: "Mazar", caudal: "CaudalMaz", cota: "CotaMaz", min: 2098, max: 2153,
+      descCaudal: "Caudal registrado en Mazar" },
+    { id: "amaluza", nombre: "Amaluza (Molino)", caudal: "CaudalMol", cota: "CotaMol", min: 1975, max: 1991,
+      descCaudal: "Caudal registrado en el embalse de Amaluza, que abastece a la central Molino" },
+    { id: "sopladora", nombre: "Sopladora", caudal: "CaudalSop", cota: "CotaSop", min: 1312, max: 1318,
+      descCaudal: "Caudal registrado en la central Sopladora" },
+    { id: "msf", nombre: "Minas San Francisco", caudal: "CaudalMsf", cota: "CotaMsf", min: 783.33, max: 792.86,
+      descCaudal: "Caudal registrado en Minas San Francisco" }
+  ];
+  var MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  var DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+
+  var params = new URLSearchParams(location.search);
+  var estado = {
+    periodo: params.get("periodo") === "mensual" ? "mensual" : "diario",
+    embalse: EMBALSES.some(function (e) { return e.id === params.get("embalse"); }) ? params.get("embalse") : "mazar"
+  };
+  var datos = { diario: null, mensual: null };
+  var charts = {};
+
+  function num(v, dec) {
+    return v.toLocaleString("es-EC", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  }
+
+  // "13/10/2026 15:00:00" -> Date (hora local de Ecuador)
+  function parseFecha(s) {
+    var m = s.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
+    if (!m) return null;
+    return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]);
+  }
+
+  // CELEC escribe 0 cuando no hay dato: una fila toda en cero es una hora o día sin información,
+  // y una cota en 0 nunca es real.
+  function parseCSV(txt) {
+    var lineas = txt.replace(/\r/g, "").split("\n").filter(function (l) { return l.trim(); });
+    var cab = lineas.shift().split(",").map(function (c) { return c.trim(); });
+    var filas = [];
+    lineas.forEach(function (l) {
+      var celdas = l.split(",").map(function (c) { return c.replace(/"/g, "").trim(); });
+      var fecha = parseFecha(celdas[0]);
+      if (!fecha) return;
+      var fila = { fecha: fecha }, hayDato = false;
+      cab.forEach(function (col, i) {
+        if (i === 0) return;
+        var v = celdas[i] === "" || celdas[i] == null ? null : parseFloat(celdas[i]);
+        if (v !== null && isNaN(v)) v = null;
+        if (v === 0 && /^Cota/.test(col)) v = null;
+        if (v) hayDato = true;
+        fila[col] = v;
+      });
+      if (!hayDato) return;
+      filas.push(fila);
+    });
+    filas.sort(function (a, b) { return a.fecha - b.fecha; });
+    return filas;
+  }
+
+  function etiqueta(f, periodo) {
+    if (periodo === "mensual") return f.fecha.getDate() + " " + MESES[f.fecha.getMonth()].slice(0, 3);
+    var h = f.fecha.getHours();
+    return (h === 0 ? "24" : String(h).padStart(2, "0")) + ":00";
+  }
+
+  function fechaLarga(d) {
+    return DIAS[d.getDay()] + " " + d.getDate() + " de " + MESES[d.getMonth()] + " de " + d.getFullYear();
+  }
+
+  function ultimo(filas, col) {
+    for (var i = filas.length - 1; i >= 0; i--) if (filas[i][col] != null) return filas[i];
+    return null;
+  }
+
+  function opcionesChart(unidad, dec, tipoX) {
+    return {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "#14152b", padding: 10, cornerRadius: 8, displayColors: false,
+          titleFont: { family: "Inter", weight: "600" }, bodyFont: { family: "Inter" },
+          callbacks: {
+            title: function (it) { return tipoX === "mensual" ? "Día " + it[0].label : "Hora " + it[0].label; },
+            label: function (it) { return it.parsed.y == null ? "Sin dato" : num(it.parsed.y, dec) + " " + unidad; }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: "#e3e5ee" },
+             ticks: { color: "#7b7d95", font: { family: "Inter", size: 11 }, maxRotation: 0, autoSkipPadding: 10 } },
+        y: { grid: { color: "#eef0f5" }, border: { display: false },
+             ticks: { color: "#7b7d95", font: { family: "Inter", size: 11 }, maxTicksLimit: 5,
+                      callback: function (v) { return num(v, dec > 1 ? 1 : 0); } },
+             title: { display: true, text: unidad, color: "#7b7d95", font: { family: "Inter", size: 11 } } }
+      }
+    };
+  }
+
+  function dibujar(id, tipo, labels, valores, color, unidad, dec, periodo) {
+    if (charts[id]) charts[id].destroy();
+    var ds = tipo === "bar"
+      ? { data: valores, backgroundColor: color, borderRadius: 4, borderSkipped: "start", maxBarThickness: 18 }
+      : { data: valores, borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.25,
+          pointRadius: valores.length > 20 ? 0 : 3, pointHoverRadius: 5, pointHitRadius: 12, spanGaps: false };
+    charts[id] = new Chart(document.getElementById(id), {
+      type: tipo, data: { labels: labels, datasets: [ds] }, options: opcionesChart(unidad, dec, periodo)
+    });
+  }
+
+  function render() {
+    var filas = datos[estado.periodo];
+    var emb = EMBALSES.filter(function (e) { return e.id === estado.embalse; })[0];
+    var mensual = estado.periodo === "mensual";
+
+    document.querySelectorAll("[data-periodo]").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.periodo === estado.periodo));
+    });
+    document.querySelectorAll("#chips button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.id === estado.embalse));
+    });
+    document.getElementById("descarga").href = "data/" + estado.periodo + ".csv";
+
+    var app = document.getElementById("app"), vacio = document.getElementById("vacio");
+    if (!filas || !filas.length) {
+      app.hidden = true; vacio.hidden = false;
+      document.getElementById("sub").textContent = "";
+      return;
+    }
+    app.hidden = false; vacio.hidden = true;
+
+    var uCaudal = ultimo(filas, emb.caudal);
+    var uCota = emb.cota ? ultimo(filas, emb.cota) : null;
+    var ref = uCaudal || uCota || filas[filas.length - 1];
+
+    // Subtítulo
+    var sub;
+    if (mensual) {
+      var d = ref.fecha;
+      sub = "Promedio diario de " + MESES[d.getMonth()] + " de " + d.getFullYear() +
+            ". Datos hasta el " + d.getDate() + " de " + MESES[d.getMonth()] + ".";
+    } else {
+      var dia = new Date(ref.fecha); if (dia.getHours() === 0) dia.setDate(dia.getDate() - 1);
+      sub = "Registro por hora del " + fechaLarga(dia) + ". Último dato: " + etiqueta(ref, "diario") + ".";
+    }
+    document.getElementById("sub").textContent = sub;
+
+    // Indicadores
+    var k = [];
+    k.push('<div class="kpi"><div class="lbl">' + (mensual ? "Caudal promedio, último día" : "Caudal, último registro") +
+           '</div><div class="val">' + (uCaudal ? num(uCaudal[emb.caudal], 1) : "s/d") + '<small>m³/s</small></div>' +
+           '<div class="note">' + (uCaudal ? etiquetaNota(uCaudal, mensual) : "") + '</div></div>');
+    if (emb.cota) {
+      var c = uCota ? uCota[emb.cota] : null;
+      var pct = c == null ? null : Math.max(0, Math.min(100, (c - emb.min) / (emb.max - emb.min) * 100));
+      k.push('<div class="kpi"><div class="lbl">Cota, último registro</div><div class="val">' +
+             (c == null ? "s/d" : num(c, 2)) + '<small>m s. n. m.</small></div><div class="note">' +
+             (uCota ? etiquetaNota(uCota, mensual) : "") + '</div></div>');
+      k.push('<div class="kpi"><div class="lbl">Posición en el rango de operación</div><div class="val">' +
+             (pct == null ? "s/d" : num(pct, 0) + "%") + '</div><div class="meter" aria-hidden="true"><i style="width:' +
+             (pct || 0) + '%"></i></div><div class="note">Mín. ' + num(emb.min, emb.min % 1 ? 2 : 0) +
+             ' · Máx. ' + num(emb.max, emb.max % 1 ? 2 : 0) + ' m s. n. m.</div></div>');
+    } else {
+      var vals = filas.map(function (f) { return f[emb.caudal]; }).filter(function (v) { return v != null; });
+      var mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals);
+      k.push('<div class="kpi"><div class="lbl">Máximo del periodo</div><div class="val">' + num(mx, 1) + '<small>m³/s</small></div></div>');
+      k.push('<div class="kpi"><div class="lbl">Mínimo del periodo</div><div class="val">' + num(mn, 1) + '<small>m³/s</small></div></div>');
+    }
+    document.getElementById("kpis").innerHTML = k.join("");
+
+    // Gráficos
+    var labels = filas.map(function (f) { return etiqueta(f, estado.periodo); });
+    document.getElementById("t-caudal").textContent = (mensual ? "Caudal promedio diario, " : "Caudal por hora, ") + emb.nombre;
+    document.getElementById("h-caudal").textContent = emb.descCaudal + ", en metros cúbicos por segundo.";
+    dibujar("c-caudal", mensual ? "bar" : "line", labels, filas.map(function (f) { return f[emb.caudal]; }),
+            getComputedStyle(document.documentElement).getPropertyValue("--caudal").trim(), "m³/s", 2, estado.periodo);
+
+    var cardCota = document.getElementById("card-cota");
+    if (emb.cota) {
+      cardCota.style.display = "";
+      document.getElementById("t-cota").textContent = (mensual ? "Cota al cierre de cada día, " : "Cota por hora, ") + emb.nombre;
+      document.getElementById("h-cota").textContent = "Nivel del agua, en metros sobre el nivel del mar.";
+      dibujar("c-cota", "line", labels, filas.map(function (f) { return f[emb.cota]; }),
+              getComputedStyle(document.documentElement).getPropertyValue("--cota").trim(), "m s. n. m.", 2, estado.periodo);
+    } else {
+      cardCota.style.display = "none";
+      if (charts["c-cota"]) { charts["c-cota"].destroy(); delete charts["c-cota"]; }
+    }
+
+    // Tabla
+    var th = "<thead><tr><th>" + (mensual ? "Día" : "Hora") + "</th><th>Caudal (m³/s)</th>" +
+             (emb.cota ? "<th>Cota (m s. n. m.)</th>" : "") + "</tr></thead>";
+    var tb = filas.map(function (f, i) {
+      return "<tr><td>" + labels[i] + "</td><td>" + (f[emb.caudal] == null ? "s/d" : num(f[emb.caudal], 2)) + "</td>" +
+             (emb.cota ? "<td>" + (f[emb.cota] == null ? "s/d" : num(f[emb.cota], 2)) + "</td>" : "") + "</tr>";
+    }).join("");
+    document.getElementById("tabla").innerHTML = th + "<tbody>" + tb + "</tbody>";
+  }
+
+  function etiquetaNota(f, mensual) {
+    return mensual ? f.fecha.getDate() + " de " + MESES[f.fecha.getMonth()] : "A las " + etiqueta(f, "diario");
+  }
+
+  // Controles
+  document.getElementById("chips").innerHTML = EMBALSES.map(function (e) {
+    return '<button type="button" data-id="' + e.id + '" aria-pressed="false">' + e.nombre + "</button>";
+  }).join("");
+  document.getElementById("chips").addEventListener("click", function (ev) {
+    var b = ev.target.closest("button"); if (!b) return;
+    estado.embalse = b.dataset.id; render();
+  });
+  document.querySelectorAll("[data-periodo]").forEach(function (b) {
+    b.addEventListener("click", function () { estado.periodo = b.dataset.periodo; render(); });
+  });
+
+  // Carga de datos (el parámetro v evita que el navegador muestre una versión vieja del CSV)
+  var v = "?v=" + Math.floor(Date.now() / 600000);
+  Promise.all([
+    fetch("data/diario.csv" + v).then(function (r) { return r.ok ? r.text() : ""; }),
+    fetch("data/mensual.csv" + v).then(function (r) { return r.ok ? r.text() : ""; })
+  ]).then(function (res) {
+    datos.diario = res[0] ? parseCSV(res[0]) : [];
+    datos.mensual = res[1] ? parseCSV(res[1]) : [];
+    render();
+  }).catch(function () {
+    document.getElementById("sub").textContent = "No se pudieron cargar los datos.";
+  });
+})();
+</script>
+</body>
+</html>
