@@ -116,7 +116,7 @@
   var EMBALSES = [
     { id: "paute", nombre: "Cuenca del Paute", caudal: "CaudalCuencaPaute",
       descCaudal: "Caudal de la cuenca del río Paute" },
-    { id: "mazar", nombre: "Mazar", caudal: "CaudalMaz", cota: "CotaMaz", min: 2098, max: 2153,
+    { id: "mazar", nombre: "Mazar", caudal: "CaudalMaz", cota: "CotaMaz", min: 2098, max: 2153, critica: 2115,
       descCaudal: "Caudal registrado en Mazar" },
     { id: "amaluza", nombre: "Amaluza (Molino)", caudal: "CaudalMol", cota: "CotaMol", min: 1975, max: 1991,
       descCaudal: "Caudal registrado en el embalse de Amaluza, que abastece a la central Molino" },
@@ -195,6 +195,7 @@
       plugins: {
         legend: { display: false },
         tooltip: {
+          filter: function (it) { return !it.dataset.referencia; },
           backgroundColor: "#14152b", padding: 10, cornerRadius: 8, displayColors: false,
           titleFont: { family: "Inter", weight: "600" }, bodyFont: { family: "Inter" },
           callbacks: {
@@ -214,14 +215,16 @@
     };
   }
 
-  function dibujar(id, tipo, labels, valores, color, unidad, dec, periodo) {
+  function dibujar(id, tipo, labels, valores, color, unidad, dec, periodo, extra) {
     if (charts[id]) charts[id].destroy();
     var ds = tipo === "bar"
       ? { data: valores, backgroundColor: color, borderRadius: 4, borderSkipped: "start", maxBarThickness: 18 }
       : { data: valores, borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.25,
           pointRadius: valores.length > 20 ? 0 : 3, pointHoverRadius: 5, pointHitRadius: 12, spanGaps: false };
+    var opts = opcionesChart(unidad, dec, periodo);
+    if (extra && extra.length) opts.scales.y.suggestedMin = extra[0].data[0] - 2;
     charts[id] = new Chart(document.getElementById(id), {
-      type: tipo, data: { labels: labels, datasets: [ds] }, options: opcionesChart(unidad, dec, periodo)
+      type: tipo, data: { labels: labels, datasets: [ds].concat(extra || []) }, options: opts
     });
   }
 
@@ -273,6 +276,12 @@
       k.push('<div class="kpi"><div class="lbl">Cota, último registro</div><div class="val">' +
              (c == null ? "s/d" : num(c, 2)) + '<small>m s. n. m.</small></div><div class="note">' +
              (uCota ? etiquetaNota(uCota, mensual) : "") + '</div></div>');
+      if (emb.critica) {
+        var dif = c == null ? null : c - emb.critica;
+        k.push('<div class="kpi"><div class="lbl">' + (dif != null && dif < 0 ? "Metros bajo la cota crítica" : "Metros sobre la cota crítica") +
+               '</div><div class="val">' + (dif == null ? "s/d" : num(Math.abs(dif), 1)) + '<small>m</small></div>' +
+               '<div class="note">Cota crítica: ' + num(emb.critica, 0) + ' m s. n. m., nivel en el que la central deja de generar</div></div>');
+      } else
       k.push('<div class="kpi"><div class="lbl">Posición en el rango de operación</div><div class="val">' +
              (pct == null ? "s/d" : num(pct, 0) + "%") + '</div><div class="meter" aria-hidden="true"><i style="width:' +
              (pct || 0) + '%"></i></div><div class="note">Mín. ' + num(emb.min, emb.min % 1 ? 2 : 0) +
@@ -296,9 +305,14 @@
     if (emb.cota) {
       cardCota.style.display = "";
       document.getElementById("t-cota").textContent = (mensual ? "Cota al cierre de cada día, " : "Cota por hora, ") + emb.nombre;
-      document.getElementById("h-cota").textContent = "Nivel del agua, en metros sobre el nivel del mar.";
+      document.getElementById("h-cota").textContent = "Nivel del agua, en metros sobre el nivel del mar." +
+        (emb.critica ? " La línea roja marca la cota crítica (" + num(emb.critica, 0) + " m s. n. m.)." : "");
+      var extra = emb.critica ? [{
+        referencia: true, data: labels.map(function () { return emb.critica; }),
+        borderColor: "#d0312d", borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, pointHitRadius: 0, fill: false
+      }] : [];
       dibujar("c-cota", "line", labels, filas.map(function (f) { return f[emb.cota]; }),
-              getComputedStyle(document.documentElement).getPropertyValue("--cota").trim(), "m s. n. m.", 2, estado.periodo);
+              getComputedStyle(document.documentElement).getPropertyValue("--cota").trim(), "m s. n. m.", 2, estado.periodo, extra);
     } else {
       cardCota.style.display = "none";
       if (charts["c-cota"]) { charts["c-cota"].destroy(); delete charts["c-cota"]; }
